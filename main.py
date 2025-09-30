@@ -4,8 +4,7 @@ from typing import List, Dict
 import json
 from agno.agent import Agent
 from agno.models.google import Gemini
-from youtubesearchpython import VideosSearch
-import os
+import scrapetube
 
 # Set page config
 st.set_page_config(
@@ -21,6 +20,8 @@ if 'topic' not in st.session_state:
     st.session_state.topic = ''
 if 'videos' not in st.session_state:
     st.session_state.videos = []
+if 'current_video_index' not in st.session_state:
+    st.session_state.current_video_index = 0
 if 'documentation' not in st.session_state:
     st.session_state.documentation = ''
 if 'quiz' not in st.session_state:
@@ -33,6 +34,10 @@ if 'quiz_attempt' not in st.session_state:
     st.session_state.quiz_attempt = 1
 if 'mastery_achieved' not in st.session_state:
     st.session_state.mastery_achieved = False
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+if 'related_topics' not in st.session_state:
+    st.session_state.related_topics = []
 
 # Agent 1: Topic Selector
 class TopicSelectorAgent:
@@ -59,23 +64,47 @@ class TopicSelectorAgent:
         )
         return response.content.strip()
 
-# Agent 2: Video Retriever
+# Agent 2: Video Retriever (Fixed with scrapetube)
 class VideoRetrieverAgent:
     @staticmethod
-    def fetch_videos(topic: str, limit: int = 5) -> List[Dict]:
+    def fetch_videos(topic: str, limit: int = 10) -> List[Dict]:
+        """Fetch top 10 videos and cache them"""
         try:
-            videos_search = VideosSearch(topic, limit=limit)
-            results = videos_search.result()
-            
             videos = []
-            for video in results.get('result', []):
-                videos.append({
-                    'title': video.get('title'),
-                    'link': video.get('link'),
-                    'channel': video.get('channel', {}).get('name'),
-                    'duration': video.get('duration'),
-                    'views': video.get('viewCount', {}).get('text')
-                })
+            video_results = scrapetube.get_search(topic, limit=limit)
+            
+            for video in video_results:
+                video_id = video.get('videoId')
+                if video_id:
+                    title = video.get('title', {}).get('runs', [{}])[0].get('text', 'No title')
+                    
+                    # Extract channel name
+                    channel_name = 'Unknown'
+                    if 'ownerText' in video and 'runs' in video['ownerText']:
+                        channel_name = video['ownerText']['runs'][0].get('text', 'Unknown')
+                    
+                    # Extract views
+                    views = 'N/A'
+                    if 'viewCountText' in video and 'simpleText' in video['viewCountText']:
+                        views = video['viewCountText']['simpleText']
+                    
+                    # Extract duration
+                    duration = 'N/A'
+                    if 'lengthText' in video and 'simpleText' in video['lengthText']:
+                        duration = video['lengthText']['simpleText']
+                    
+                    videos.append({
+                        'title': title,
+                        'link': f"https://www.youtube.com/watch?v={video_id}",
+                        'video_id': video_id,
+                        'channel': channel_name,
+                        'duration': duration,
+                        'views': views
+                    })
+                    
+                    if len(videos) >= limit:
+                        break
+            
             return videos
         except Exception as e:
             st.error(f"Error fetching videos: {e}")
@@ -144,9 +173,7 @@ class QuizGeneratorAgent:
         )
         
         try:
-            # Extract JSON from response
             content = response.content.strip()
-            # Remove markdown code blocks if present
             if content.startswith('```'):
                 content = content.split('```')[1]
                 if content.startswith('json'):
@@ -180,7 +207,6 @@ class EvaluatorAgent:
         )
     
     async def evaluate(self, quiz: List[Dict], answers: Dict, documentation: str) -> Dict:
-        # Calculate score
         correct_count = 0
         total = len(quiz)
         weak_topics = []
@@ -195,7 +221,6 @@ class EvaluatorAgent:
         score_percent = (correct_count / total * 100) if total > 0 else 0
         mastery = score_percent >= 80
         
-        # Get AI feedback
         feedback_prompt = (
             f"A student scored {correct_count}/{total} ({score_percent:.1f}%) on a quiz about the topic. "
             f"Questions they got wrong: {weak_topics if weak_topics else 'None'}. "
@@ -213,6 +238,72 @@ class EvaluatorAgent:
             'feedback': response.content,
             'weak_areas': weak_topics
         }
+
+# Agent 6: Q&A Agent
+class QAAgent:
+    def __init__(self, api_key: str):
+        self.agent = Agent(
+            name="Q&A Assistant",
+            model=Gemini(
+                id="gemini-2.0-flash-exp",
+                api_key=api_key
+            ),
+            role="Educational Q&A Expert",
+            instructions=[
+                "Answer questions based on the provided documentation",
+                "Provide clear, concise, and educational answers",
+                "Use examples when helpful",
+                "If question is outside documentation scope, mention it but try to help anyway",
+                "Be encouraging and supportive"
+            ],
+            markdown=True
+        )
+    
+    async def answer_question(self, question: str, documentation: str) -> str:
+        response = await self.agent.arun(
+            f"Based on this documentation:\n\n{documentation}\n\n"
+            f"Answer this question: {question}\n\n"
+            f"Provide a clear, educational answer."
+        )
+        return response.content
+
+# Agent 7: Related Topics Generator
+class RelatedTopicsAgent:
+    def __init__(self, api_key: str):
+        self.agent = Agent(
+            name="Related Topics Finder",
+            model=Gemini(
+                id="gemini-2.0-flash-exp",
+                api_key=api_key
+            ),
+            role="Learning Path Expert",
+            instructions=[
+                "Suggest related topics for deeper learning",
+                "Topics should build on or complement the main topic",
+                "Provide 5 specific, actionable topic suggestions",
+                "Each topic should be clearly described"
+            ],
+            markdown=True
+        )
+    
+    async def get_related_topics(self, topic: str, documentation: str) -> List[str]:
+        response = await self.agent.arun(
+            f"The student has mastered '{topic}'. "
+            f"Based on this documentation:\n\n{documentation[:500]}...\n\n"
+            f"Suggest 5 related topics they should learn next. "
+            f"Return ONLY a numbered list of topics, one per line."
+        )
+        
+        topics = []
+        for line in response.content.split('\n'):
+            line = line.strip()
+            if line and (line[0].isdigit() or line.startswith('-') or line.startswith('*')):
+                # Clean up the topic
+                topic_text = line.lstrip('0123456789.-* ').strip()
+                if topic_text:
+                    topics.append(topic_text)
+        
+        return topics[:5]
 
 # Main App
 def main():
@@ -233,6 +324,8 @@ def main():
     doc_agent = DocGeneratorAgent(api_key)
     quiz_agent = QuizGeneratorAgent(api_key)
     eval_agent = EvaluatorAgent(api_key)
+    qa_agent = QAAgent(api_key)
+    related_agent = RelatedTopicsAgent(api_key)
     
     # Step 1: Topic Input
     if st.session_state.current_step == 'topic_input':
@@ -245,49 +338,114 @@ def main():
                 with st.spinner("Analyzing topic..."):
                     topic = asyncio.run(topic_agent.select_topic(user_topic))
                     st.session_state.topic = topic
-                    st.session_state.current_step = 'fetch_videos'
+                    st.session_state.current_step = 'fetch_content'
                     st.rerun()
             else:
                 st.error("Please enter a topic")
     
-    # Step 2: Fetch Videos
-    elif st.session_state.current_step == 'fetch_videos':
+    # Step 2: Fetch Videos and Generate Documentation
+    elif st.session_state.current_step == 'fetch_content':
         st.header(f"📚 Learning: {st.session_state.topic}")
         
-        with st.spinner("Finding best YouTube videos..."):
-            videos = video_agent.fetch_videos(st.session_state.topic)
-            st.session_state.videos = videos
-            st.session_state.current_step = 'show_videos'
+        with st.spinner("Fetching resources..."):
+            # Fetch videos (cache top 10)
+            if not st.session_state.videos:
+                videos = video_agent.fetch_videos(st.session_state.topic, limit=10)
+                st.session_state.videos = videos
+                st.session_state.current_video_index = 0
+            
+            # Generate documentation
+            if not st.session_state.documentation:
+                docs = asyncio.run(doc_agent.generate_docs(st.session_state.topic))
+                st.session_state.documentation = docs
+            
+            st.session_state.current_step = 'learning'
             st.rerun()
     
-    # Step 3: Show Videos and Generate Docs
-    elif st.session_state.current_step == 'show_videos':
+    # Step 3: Learning Phase (Videos, Docs, Q&A)
+    elif st.session_state.current_step == 'learning':
         st.header(f"📚 Learning: {st.session_state.topic}")
         
-        col1, col2 = st.columns([1, 1])
+        # Create tabs
+        tab1, tab2 = st.tabs(["📺 Study Material", "💬 Ask Questions"])
         
-        with col1:
-            st.subheader("📺 Recommended Videos")
-            for video in st.session_state.videos:
-                with st.expander(f"🎥 {video['title'][:60]}..."):
-                    st.markdown(f"**Channel:** {video['channel']}")
-                    st.markdown(f"**Duration:** {video['duration']}")
-                    st.markdown(f"**Views:** {video['views']}")
-                    st.markdown(f"[Watch Video]({video['link']})")
-        
-        with col2:
-            if not st.session_state.documentation:
-                with st.spinner("Generating comprehensive documentation..."):
-                    docs = asyncio.run(doc_agent.generate_docs(st.session_state.topic))
-                    st.session_state.documentation = docs
-                    st.rerun()
-            else:
-                st.subheader("📖 Study Material")
-                st.markdown(st.session_state.documentation)
-        
-        if st.session_state.documentation:
-            if st.button("✅ I've Studied - Take Quiz", type="primary"):
+        # Tab 1: Video and Documentation
+        with tab1:
+            # Video Section
+            if st.session_state.videos:
+                st.subheader("📺 Recommended Video")
+                
+                current_video = st.session_state.videos[st.session_state.current_video_index]
+                
+                # Embed YouTube video
+                st.video(current_video['link'])
+                
+                # Video details
+                col1, col2, col3 = st.columns([2, 1, 1])
+                with col1:
+                    st.markdown(f"**{current_video['title']}**")
+                with col2:
+                    st.markdown(f"⏱️ {current_video['duration']}")
+                with col3:
+                    st.markdown(f"👁️ {current_video['views']}")
+                
+                st.markdown(f"📺 *{current_video['channel']}*")
+                
+                # Next Video Button
+                col1, col2 = st.columns([1, 4])
+                with col1:
+                    if st.button("⏭️ Next Video"):
+                        st.session_state.current_video_index = (st.session_state.current_video_index + 1) % len(st.session_state.videos)
+                        st.rerun()
+                with col2:
+                    st.caption(f"Video {st.session_state.current_video_index + 1} of {len(st.session_state.videos)}")
+            
+            st.markdown("---")
+            
+            # Documentation Section
+            st.subheader("📖 Study Material")
+            st.markdown(st.session_state.documentation)
+            
+            st.markdown("---")
+            
+            # Quiz Button
+            if st.button("✅ I've Studied - Take Quiz", type="primary", use_container_width=True):
                 st.session_state.current_step = 'generate_quiz'
+                st.rerun()
+        
+        # Tab 2: Q&A
+        with tab2:
+            st.subheader("💬 Ask Questions About This Topic")
+            
+            # Display chat history
+            for i, chat in enumerate(st.session_state.chat_history):
+                with st.chat_message("user"):
+                    st.write(chat['question'])
+                with st.chat_message("assistant"):
+                    st.markdown(chat['answer'])
+            
+            # Question input
+            user_question = st.chat_input("Ask a question about the topic...")
+            
+            if user_question:
+                # Add user question to chat
+                with st.chat_message("user"):
+                    st.write(user_question)
+                
+                # Get answer
+                with st.chat_message("assistant"):
+                    with st.spinner("Thinking..."):
+                        answer = asyncio.run(qa_agent.answer_question(
+                            user_question, 
+                            st.session_state.documentation
+                        ))
+                        st.markdown(answer)
+                
+                # Save to chat history
+                st.session_state.chat_history.append({
+                    'question': user_question,
+                    'answer': answer
+                })
                 st.rerun()
     
     # Step 4: Generate Quiz
@@ -334,6 +492,15 @@ def main():
                 st.session_state.documentation
             ))
             
+            # Generate related topics if mastery achieved
+            if results['mastery'] and not st.session_state.related_topics:
+                st.session_state.related_topics = asyncio.run(
+                    related_agent.get_related_topics(
+                        st.session_state.topic,
+                        st.session_state.documentation
+                    )
+                )
+            
             st.header("📊 Quiz Results")
             
             col1, col2, col3 = st.columns(3)
@@ -360,19 +527,44 @@ def main():
             if results['mastery']:
                 st.success("🎉 Congratulations! You've mastered this topic!")
                 st.balloons()
-                if st.button("Learn Another Topic"):
-                    # Reset everything
+                
+                # Show related topics
+                st.markdown("---")
+                st.subheader("🚀 Continue Your Learning Journey")
+                st.markdown("Here are some related topics you might want to explore next:")
+                
+                for i, related_topic in enumerate(st.session_state.related_topics, 1):
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.markdown(f"**{i}.** {related_topic}")
+                    with col2:
+                        if st.button("Learn", key=f"related_{i}"):
+                            # Reset and start learning this topic
+                            for key in list(st.session_state.keys()):
+                                del st.session_state[key]
+                            st.session_state.current_step = 'fetch_content'
+                            st.session_state.topic = related_topic
+                            st.rerun()
+                
+                st.markdown("---")
+                if st.button("Learn Another Topic", use_container_width=True):
                     for key in list(st.session_state.keys()):
                         del st.session_state[key]
                     st.rerun()
             else:
                 st.warning("📚 You need more practice. Let's focus on your weak areas!")
-                st.session_state.weak_areas = results['weak_areas'][:3]  # Top 3 weak areas
+                st.session_state.weak_areas = results['weak_areas'][:3]
                 st.session_state.quiz_attempt += 1
                 
-                if st.button("🔄 Retake Quiz (Focused on Weak Areas)", type="primary"):
-                    st.session_state.current_step = 'generate_quiz'
-                    st.rerun()
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🔄 Retake Quiz (Focused on Weak Areas)", type="primary", use_container_width=True):
+                        st.session_state.current_step = 'generate_quiz'
+                        st.rerun()
+                with col2:
+                    if st.button("📚 Study Again", use_container_width=True):
+                        st.session_state.current_step = 'learning'
+                        st.rerun()
 
 if __name__ == "__main__":
     main()

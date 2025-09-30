@@ -450,6 +450,7 @@ dependencies = [
     { name = "agno" },
     { name = "google-genai" },
     { name = "google-generativeai" },
+    { name = "scrapetube" },
     { name = "streamlit" },
     { name = "youtube-search-python" },
 ]
@@ -459,6 +460,7 @@ requires-dist = [
     { name = "agno", specifier = ">=2.0.11" },
     { name = "google-genai", specifier = ">=1.39.1" },
     { name = "google-generativeai", specifier = ">=0.8.5" },
+    { name = "scrapetube", specifier = ">=2.6.0" },
     { name = "streamlit", specifier = ">=1.50.0" },
     { name = "youtube-search-python", specifier = ">=1.6.6" },
 ]
@@ -1176,6 +1178,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/da/8a/22b7beea3ee0d44b1916c0c1cb0ee3af23b700b6da9f04991899d0c555d4/rsa-4.9.1.tar.gz", hash = "sha256:e7bdbfdb5497da4c07dfd35530e1a902659db6ff241e39d9953cad06ebd0ae75", size = 29034, upload-time = "2025-04-16T09:51:18.218Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/64/8d/0133e4eb4beed9e425d9a98ed6e081a55d195481b7632472be1af08d2f6b/rsa-4.9.1-py3-none-any.whl", hash = "sha256:68635866661c6836b8d39430f97a996acbd61bfa49406748ea243539fe239762", size = 34696, upload-time = "2025-04-16T09:51:17.142Z" },
+]
+
+[[package]]
+name = "scrapetube"
+version = "2.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "typing-extensions" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f6/9f/a1a209c52605bc04499461f3e8ce05ab90a7f45b0f09b950e0a4e6b78a92/scrapetube-2.6.0-py3-none-any.whl", hash = "sha256:70077c2b80474896cd2490801d1ce33488bc8fb8ef9d2137f683a799ffac00af", size = 5874, upload-time = "2025-09-16T17:47:21.108Z" },
 ]
 
 [[package]]

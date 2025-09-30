@@ -8,6 +8,7 @@ dependencies = [
     "agno>=2.0.11",
     "google-genai>=1.39.1",
     "google-generativeai>=0.8.5",
+    "scrapetube>=2.6.0",
     "streamlit>=1.50.0",
     "youtube-search-python>=1.6.6",
 ]
