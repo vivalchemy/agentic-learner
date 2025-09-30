@@ -7,45 +7,69 @@ from agno.agent import Agent
 from agno.models.google import Gemini
 import scrapetube
 from dotenv import load_dotenv
+from dataclasses import dataclass
+from enum import Enum
 
 load_dotenv()
 
-# Set page config
-st.set_page_config(page_title="AI Learning Assistant", page_icon="🎓", layout="wide")
+# constants
+class Model(Enum):
+    """Enum for different models"""
+    FAST = "gemini-2.5-flash"
+    PRO = "gemini-2.5-pro"
 
-# Initialize session state
-if "current_step" not in st.session_state:
-    st.session_state.current_step = "topic_input"
-if "topic" not in st.session_state:
-    st.session_state.topic = ""
-if "videos" not in st.session_state:
-    st.session_state.videos = []
-if "current_video_index" not in st.session_state:
-    st.session_state.current_video_index = 0
-if "documentation" not in st.session_state:
-    st.session_state.documentation = ""
-if "quiz" not in st.session_state:
-    st.session_state.quiz = []
-if "user_answers" not in st.session_state:
-    st.session_state.user_answers = {}
-if "weak_areas" not in st.session_state:
-    st.session_state.weak_areas = []
-if "quiz_attempt" not in st.session_state:
-    st.session_state.quiz_attempt = 1
-if "mastery_achieved" not in st.session_state:
-    st.session_state.mastery_achieved = False
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "related_topics" not in st.session_state:
-    st.session_state.related_topics = []
+MAX_WIDTH = 720
+
+# config & enums
+class AppState(Enum):
+    """Enum for different application states"""
+    TOPIC_INPUT = "topic_input"
+    FETCH_CONTENT = "fetch_content"
+    LEARNING = "learning"
+    GENERATE_QUIZ = "generate_quiz"
+    TAKE_QUIZ = "take_quiz"
+    EVALUATE = "evaluate"
 
 
-# Agent 1: Topic Selector
+@dataclass
+class SessionData:
+    """Data structure for session state"""
+    current_step: str = AppState.TOPIC_INPUT.value
+    topic: str = ""
+    videos: Optional[List[Dict]] = None
+    current_video_index: int = 0
+    documentation: str = ""
+    quiz: Optional[List[Dict]] = None
+    user_answers: Optional[Dict] = None
+    weak_areas: Optional[List[str]] = None
+    quiz_attempt: int = 1
+    mastery_achieved: bool = False
+    chat_history: Optional[List[Dict]] = None
+    related_topics: Optional[List[str]] = None
+
+    def __post_init__(self):
+        if self.videos is None:
+            self.videos = []
+        if self.quiz is None:
+            self.quiz = []
+        if self.user_answers is None:
+            self.user_answers = {}
+        if self.weak_areas is None:
+            self.weak_areas = []
+        if self.chat_history is None:
+            self.chat_history = []
+        if self.related_topics is None:
+            self.related_topics = []
+
+
+# agents
 class TopicSelectorAgent:
+    """Agent for analyzing and refining learning topics"""
+    
     def __init__(self, api_key: str):
         self.agent = Agent(
             name="Topic Selector",
-            model=Gemini(id="gemini-2.5-flash", api_key=api_key),
+            model=Gemini(id=Model.FAST.value, api_key=api_key),
             role="Topic Selection Expert",
             instructions=[
                 "Analyze user input and extract or refine the learning topic",
@@ -64,57 +88,50 @@ class TopicSelectorAgent:
         return content.strip()
 
 
-# Agent 2: Video Retriever (Fixed with scrapetube)
 class VideoRetrieverAgent:
+    """Agent for fetching educational videos from YouTube"""
+    
     @staticmethod
     def fetch_videos(topic: str, limit: int = 10) -> List[Dict]:
-        """Fetch top 10 videos and cache them"""
+        """Fetch top videos and cache them"""
         try:
             videos = []
             video_results = scrapetube.get_search(topic, limit=limit)
 
             for video in video_results:
                 video_id = video.get("videoId")
-                if video_id:
-                    title = (
-                        video.get("title", {})
-                        .get("runs", [{}])[0]
-                        .get("text", "No title")
-                    )
+                if not video_id:
+                    continue
 
-                    # Extract channel name
-                    channel_name = "Unknown"
-                    if "ownerText" in video and "runs" in video["ownerText"]:
-                        channel_name = video["ownerText"]["runs"][0].get(
-                            "text", "Unknown"
-                        )
+                title = (
+                    video.get("title", {})
+                    .get("runs", [{}])[0]
+                    .get("text", "No title")
+                )
 
-                    # Extract views
-                    views = "N/A"
-                    if (
-                        "viewCountText" in video
-                        and "simpleText" in video["viewCountText"]
-                    ):
-                        views = video["viewCountText"]["simpleText"]
+                channel_name = "Unknown"
+                if "ownerText" in video and "runs" in video["ownerText"]:
+                    channel_name = video["ownerText"]["runs"][0].get("text", "Unknown")
 
-                    # Extract duration
-                    duration = "N/A"
-                    if "lengthText" in video and "simpleText" in video["lengthText"]:
-                        duration = video["lengthText"]["simpleText"]
+                views = "N/A"
+                if "viewCountText" in video and "simpleText" in video["viewCountText"]:
+                    views = video["viewCountText"]["simpleText"]
 
-                    videos.append(
-                        {
-                            "title": title,
-                            "link": f"https://www.youtube.com/watch?v={video_id}",
-                            "video_id": video_id,
-                            "channel": channel_name,
-                            "duration": duration,
-                            "views": views,
-                        }
-                    )
+                duration = "N/A"
+                if "lengthText" in video and "simpleText" in video["lengthText"]:
+                    duration = video["lengthText"]["simpleText"]
 
-                    if len(videos) >= limit:
-                        break
+                videos.append({
+                    "title": title,
+                    "link": f"https://www.youtube.com/watch?v={video_id}",
+                    "video_id": video_id,
+                    "channel": channel_name,
+                    "duration": duration,
+                    "views": views,
+                })
+
+                if len(videos) >= limit:
+                    break
 
             return videos
         except Exception as e:
@@ -122,12 +139,13 @@ class VideoRetrieverAgent:
             return []
 
 
-# Agent 3: Documentation Generator
 class DocGeneratorAgent:
+    """Agent for generating educational documentation"""
+    
     def __init__(self, api_key: str):
         self.agent = Agent(
             name="Documentation Generator",
-            model=Gemini(id="gemini-2.5-flash", api_key=api_key),
+            model=Gemini(id=Model.PRO.value, api_key=api_key),
             role="Educational Content Creator",
             instructions=[
                 "Research and compile comprehensive educational documentation",
@@ -135,6 +153,7 @@ class DocGeneratorAgent:
                 "Use simple language suitable for learners",
                 "Include practical examples and real-world applications",
                 "Organize information logically with proper headings",
+                "Don't include anything other than the information from your side as an affirmation to the prompt"
             ],
             markdown=True,
         )
@@ -153,12 +172,13 @@ class DocGeneratorAgent:
         )
 
 
-# Agent 4: Quiz Generator
 class QuizGeneratorAgent:
+    """Agent for generating assessment quizzes"""
+    
     def __init__(self, api_key: str):
         self.agent = Agent(
             name="Quiz Generator",
-            model=Gemini(id="gemini-2.5-flash", api_key=api_key),
+            model=Gemini(id=Model.FAST.value, api_key=api_key),
             role="Assessment Creator",
             instructions=[
                 "Generate multiple-choice questions based on documentation",
@@ -205,12 +225,13 @@ class QuizGeneratorAgent:
             return []
 
 
-# Agent 5: Evaluator/Coach
 class EvaluatorAgent:
+    """Agent for evaluating quiz performance and providing feedback"""
+    
     def __init__(self, api_key: str):
         self.agent = Agent(
             name="Learning Coach",
-            model=Gemini(id="gemini-2.5-flash", api_key=api_key),
+            model=Gemini(id=Model.FAST.value, api_key=api_key),
             role="Learning Assessment Expert",
             instructions=[
                 "Evaluate student answers and identify knowledge gaps",
@@ -263,12 +284,13 @@ class EvaluatorAgent:
         }
 
 
-# Agent 6: Q&A Agent
 class QAAgent:
+    """Agent for answering questions about the topic"""
+    
     def __init__(self, api_key: str):
         self.agent = Agent(
             name="Q&A Assistant",
-            model=Gemini(id="gemini-2.5-flash", api_key=api_key),
+            model=Gemini(id=Model.FAST.value, api_key=api_key),
             role="Educational Q&A Expert",
             instructions=[
                 "Answer questions based on the provided documentation",
@@ -293,12 +315,13 @@ class QAAgent:
         )
 
 
-# Agent 7: Related Topics Generator
 class RelatedTopicsAgent:
+    """Agent for suggesting related learning topics"""
+    
     def __init__(self, api_key: str):
         self.agent = Agent(
             name="Related Topics Finder",
-            model=Gemini(id="gemini-2.5-flash", api_key=api_key),
+            model=Gemini(id=Model.FAST.value, api_key=api_key),
             role="Learning Path Expert",
             instructions=[
                 "Suggest related topics for deeper learning",
@@ -324,7 +347,6 @@ class RelatedTopicsAgent:
             if line and (
                 line[0].isdigit() or line.startswith("-") or line.startswith("*")
             ):
-                # Clean up the topic
                 topic_text = line.lstrip("0123456789.-* ").strip()
                 if topic_text:
                     topics.append(topic_text)
@@ -332,29 +354,72 @@ class RelatedTopicsAgent:
         return topics[:5]
 
 
-# Main App
-def main():
-    st.title("Multi Agent Learning Assistant")
+class AgentManager:
+    """Centralized manager for all AI agents"""
+    
+    def __init__(self, api_key: str):
+        self.topic_agent = TopicSelectorAgent(api_key)
+        self.video_agent = VideoRetrieverAgent()
+        self.doc_agent = DocGeneratorAgent(api_key)
+        self.quiz_agent = QuizGeneratorAgent(api_key)
+        self.eval_agent = EvaluatorAgent(api_key)
+        self.qa_agent = QAAgent(api_key)
+        self.related_agent = RelatedTopicsAgent(api_key)
 
-    # API Key input
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        api_key = st.sidebar.text_input("Enter Gemini API Key", type="password")
-        st.warning("Please enter your Gemini API key in the sidebar to continue")
-        st.info("Get your API key from: https://aistudio.google.com/app/apikey")
-        return
 
-    # Initialize agents
-    topic_agent = TopicSelectorAgent(api_key)
-    video_agent = VideoRetrieverAgent()
-    doc_agent = DocGeneratorAgent(api_key)
-    quiz_agent = QuizGeneratorAgent(api_key)
-    eval_agent = EvaluatorAgent(api_key)
-    qa_agent = QAAgent(api_key)
-    related_agent = RelatedTopicsAgent(api_key)
+# ============================================================================
+# STATE MACHINE
+# ============================================================================
 
-    # Step 1: Topic Input
-    if st.session_state.current_step == "topic_input":
+class LearningStateMachine:
+    """State machine to manage application flow and transitions"""
+    
+    def __init__(self, agents: AgentManager):
+        self.agents = agents
+        self._initialize_session_state()
+
+    def _initialize_session_state(self):
+        """Initialize all session state variables"""
+        defaults = SessionData()
+        for key, value in defaults.__dict__.items():
+            if key not in st.session_state:
+                st.session_state[key] = value
+
+    def transition_to(self, new_state: AppState):
+        """Transition to a new state"""
+        st.session_state.current_step = new_state.value
+        st.rerun()
+
+    def reset_state(self):
+        """Reset all session state"""
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+
+    def run(self):
+        """Main state machine execution"""
+        current_state = st.session_state.current_step
+
+        state_handlers = {
+            AppState.TOPIC_INPUT.value: self.handle_topic_input,
+            AppState.FETCH_CONTENT.value: self.handle_fetch_content,
+            AppState.LEARNING.value: self.handle_learning,
+            AppState.GENERATE_QUIZ.value: self.handle_generate_quiz,
+            AppState.TAKE_QUIZ.value: self.handle_take_quiz,
+            AppState.EVALUATE.value: self.handle_evaluate,
+        }
+
+        handler = state_handlers.get(current_state)
+        if handler:
+            handler()
+        else:
+            st.error(f"Unknown state: {current_state}")
+
+    # ========================================================================
+    # STATE HANDLERS
+    # ========================================================================
+
+    def handle_topic_input(self):
+        """Handle topic input state"""
         st.header("Select the Topic You want to Learn")
         user_topic = st.text_input(
             "What would you like to learn today?",
@@ -364,140 +429,127 @@ def main():
         if st.button("🚀 Start Learning", type="primary"):
             if user_topic:
                 with st.spinner("Analyzing topic..."):
-                    topic = asyncio.run(topic_agent.select_topic(user_topic))
+                    topic = asyncio.run(self.agents.topic_agent.select_topic(user_topic))
                     st.session_state.topic = topic
-                    st.session_state.current_step = "fetch_content"
-                    st.rerun()
+                    self.transition_to(AppState.FETCH_CONTENT)
             else:
                 st.error("Please enter a topic")
 
-        # Step 2: Fetch Videos and Generate Documentation
-    elif st.session_state.current_step == "fetch_content":
+    def handle_fetch_content(self):
+        """Handle content fetching state"""
         st.header(f"Learning: {st.session_state.topic}")
 
         with st.spinner("Fetching resources..."):
-            # Fetch videos (cache top 10)
             if not st.session_state.videos:
-                videos = video_agent.fetch_videos(st.session_state.topic, limit=10)
+                videos = self.agents.video_agent.fetch_videos(
+                    st.session_state.topic, limit=10
+                )
                 st.session_state.videos = videos
                 st.session_state.current_video_index = 0
 
-            # Generate documentation
             if not st.session_state.documentation:
-                docs = asyncio.run(doc_agent.generate_docs(st.session_state.topic))
+                docs = asyncio.run(
+                    self.agents.doc_agent.generate_docs(st.session_state.topic)
+                )
                 st.session_state.documentation = docs
 
-            st.session_state.current_step = "learning"
-            st.rerun()
+            self.transition_to(AppState.LEARNING)
 
-        # Step 3: Learning Phase (Videos, Docs, Q&A)
-    elif st.session_state.current_step == "learning":
+    def handle_learning(self):
+        """Handle learning state with videos, docs, and Q&A"""
         st.header(f"Learning: {st.session_state.topic}")
 
-        # Create tabs
         tab1, tab2 = st.tabs(["Study Material", "Chatbot"])
 
-        # Tab 1: Video and Documentation
         with tab1:
-            # Video Section
-            if st.session_state.videos:
-                st.subheader("Recommended Video")
+            self._render_study_material()
 
-                current_video = st.session_state.videos[
-                    st.session_state.current_video_index
-                ]
-
-                # Embed YouTube video
-                st.video(current_video["link"])
-
-                # Video details
-                st.markdown(f"**{current_video['title']}**")
-
-                st.markdown(f"📺 *{current_video['channel']}*")
-
-                # Next Video Button
-                col1, col2 = st.columns([1, 4])
-                with col1:
-                    if st.button("Previous Video"):
-                        st.session_state.current_video_index = (
-                            st.session_state.current_video_index - 1
-                        ) % len(st.session_state.videos)
-                        st.rerun()
-                with col2:
-                    if st.button("Next Video"):
-                        st.session_state.current_video_index = (
-                            st.session_state.current_video_index + 1
-                        ) % len(st.session_state.videos)
-                        st.rerun()
-
-            st.markdown("---")
-
-            # Documentation Section - Fixed markdown rendering
-            st.subheader("Study Material")
-            # Use unsafe_allow_html=True to ensure proper markdown rendering
-            st.markdown(st.session_state.documentation, width="content")
-
-            st.markdown("---")
-
-            # Quiz Button
-            if st.button("Take a quiz", type="primary", use_container_width=True):
-                st.session_state.current_step = "generate_quiz"
-                st.rerun()
-
-        # Tab 2: Q&A
         with tab2:
-            st.subheader("Ask Questions About This Topic")
+            self._render_chatbot()
 
-            # Display chat history
-            for i, chat in enumerate(st.session_state.chat_history):
-                with st.chat_message("user"):
-                    st.write(chat["question"])
-                with st.chat_message("assistant"):
-                    st.markdown(chat["answer"], unsafe_allow_html=False)
+    def _render_study_material(self):
+        """Render study material tab (videos and documentation)"""
+        # Video Section
+        if st.session_state.videos:
+            st.subheader("Recommended Video")
+            current_video = st.session_state.videos[st.session_state.current_video_index]
 
-            # Question input
-            user_question = st.chat_input("Ask a question about the topic...")
+            st.video(current_video["link"], width=MAX_WIDTH)
+            st.markdown(f"**{current_video['title']}**")
+            st.markdown(f"📺 *{current_video['channel']}*")
 
-            if user_question:
-                # Add user question to chat
-                with st.chat_message("user"):
-                    st.write(user_question)
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                if st.button("Previous Video"):
+                    st.session_state.current_video_index = (
+                        st.session_state.current_video_index - 1
+                    ) % len(st.session_state.videos)
+                    st.rerun()
+            with col2:
+                if st.button("Next Video"):
+                    st.session_state.current_video_index = (
+                        st.session_state.current_video_index + 1
+                    ) % len(st.session_state.videos)
+                    st.rerun()
 
-                # Get answer
-                with st.chat_message("assistant"):
-                    with st.spinner("Thinking..."):
-                        answer = asyncio.run(
-                            qa_agent.answer_question(
-                                user_question, st.session_state.documentation
-                            )
+        st.markdown("---")
+
+        # Documentation Section
+        st.subheader("Study Material")
+        st.markdown(st.session_state.documentation, width=MAX_WIDTH)
+
+        st.markdown("---")
+
+        if st.button("Take a quiz", type="primary", use_container_width=True):
+            self.transition_to(AppState.GENERATE_QUIZ)
+
+    def _render_chatbot(self):
+        """Render Q&A chatbot tab"""
+        st.subheader("Ask Questions About This Topic")
+
+        for chat in st.session_state.chat_history:
+            with st.chat_message("user"):
+                st.write(chat["question"])
+            with st.chat_message("assistant"):
+                st.markdown(chat["answer"])
+
+        user_question = st.chat_input("Ask a question about the topic...")
+
+        if user_question:
+            with st.chat_message("user"):
+                st.write(user_question)
+
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    answer = asyncio.run(
+                        self.agents.qa_agent.answer_question(
+                            user_question, st.session_state.documentation
                         )
-                        st.markdown(answer, unsafe_allow_html=False)
+                    )
+                    st.markdown(answer)
 
-                # Save to chat history
-                st.session_state.chat_history.append(
-                    {"question": user_question, "answer": answer}
-                )
-                st.rerun()
+            st.session_state.chat_history.append(
+                {"question": user_question, "answer": answer}
+            )
+            st.rerun()
 
-        # Step 4: Generate Quiz
-    elif st.session_state.current_step == "generate_quiz":
+    def handle_generate_quiz(self):
+        """Handle quiz generation state"""
         with st.spinner("Preparing your quiz..."):
-            # Pass weak_areas only if it's not empty, otherwise pass None
             weak_areas_to_pass = (
                 st.session_state.weak_areas if st.session_state.weak_areas else None
             )
             quiz = asyncio.run(
-                quiz_agent.generate_quiz(
+                self.agents.quiz_agent.generate_quiz(
                     st.session_state.documentation, weak_areas_to_pass
                 )
             )
             st.session_state.quiz = quiz
             st.session_state.user_answers = {}
-            st.session_state.current_step = "take_quiz"
-            st.rerun()
+            self.transition_to(AppState.TAKE_QUIZ)
 
-        # Step 5: Take Quiz
-    elif st.session_state.current_step == "take_quiz":
+    def handle_take_quiz(self):
+        """Handle quiz taking state"""
         st.header(f"📝 Quiz - Attempt #{st.session_state.quiz_attempt}")
         st.markdown(f"**Topic:** {st.session_state.topic}")
 
@@ -516,105 +568,133 @@ def main():
             submitted = st.form_submit_button("Submit Quiz", type="primary")
 
             if submitted:
-                st.session_state.current_step = "evaluate"
-                st.rerun()
+                self.transition_to(AppState.EVALUATE)
 
-        # Step 6: Evaluate
-    elif st.session_state.current_step == "evaluate":
+    def handle_evaluate(self):
+        """Handle evaluation state"""
         with st.spinner("Evaluating your answers..."):
             results = asyncio.run(
-                eval_agent.evaluate(
+                self.agents.eval_agent.evaluate(
                     st.session_state.quiz,
                     st.session_state.user_answers,
                     st.session_state.documentation,
                 )
             )
 
-            # Generate related topics if mastery achieved
             if results["mastery"] and not st.session_state.related_topics:
                 st.session_state.related_topics = asyncio.run(
-                    related_agent.get_related_topics(
+                    self.agents.related_agent.get_related_topics(
                         st.session_state.topic, st.session_state.documentation
                     )
                 )
 
-            st.header("📊 Quiz Results")
+            self._render_quiz_results(results)
 
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Score", f"{results['score']}/{results['total']}")
-            col2.metric("Percentage", f"{results['percentage']:.1f}%")
-            col3.metric(
-                "Status", "✅ Mastery" if results["mastery"] else "Keep Learning"
-            )
+    def _render_quiz_results(self, results: Dict):
+        """Render quiz results and feedback"""
+        st.header("📊 Quiz Results")
 
-            st.markdown("---")
-            st.subheader("Detailed Feedback")
-            st.markdown(results["feedback"], unsafe_allow_html=False)
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Score", f"{results['score']}/{results['total']}")
+        col2.metric("Percentage", f"{results['percentage']:.1f}%")
+        col3.metric("Status", "✅ Mastery" if results["mastery"] else "📚 Keep Learning")
 
-            # Show correct answers
-            st.markdown("---")
-            st.subheader("Answer Review")
-            for i, q in enumerate(st.session_state.quiz):
-                user_ans = st.session_state.user_answers.get(i, -1)
-                correct = user_ans == q["correct"]
+        st.markdown("---")
+        st.subheader("Detailed Feedback")
+        st.markdown(results["feedback"])
 
-                with st.expander(
-                    f"{'✅' if correct else '❌'} Question {i + 1}: {q['question'][:50]}..."
-                ):
-                    st.markdown(
-                        f"**Your answer:** {q['options'][user_ans] if user_ans >= 0 else 'Not answered'}"
-                    )
-                    st.markdown(f"**Correct answer:** {q['options'][q['correct']]}")
-                    st.markdown(f"**Explanation:** {q.get('explanation', 'N/A')}")
+        st.markdown("---")
+        st.subheader("Answer Review")
+        for i, q in enumerate(st.session_state.quiz):
+            user_ans = st.session_state.user_answers.get(i, -1)
+            correct = user_ans == q["correct"]
 
-            if results["mastery"]:
-                st.success("🎉 Congratulations! You've mastered this topic!")
-                st.balloons()
-
-                # Show related topics
-                st.markdown("---")
-                st.subheader("Continue Your Learning Journey")
+            with st.expander(
+                f"{'✅' if correct else '❌'} Question {i + 1}: {q['question'][:50]}..."
+            ):
                 st.markdown(
-                    "Here are some related topics you might want to explore next:"
+                    f"**Your answer:** {q['options'][user_ans] if user_ans >= 0 else 'Not answered'}"
                 )
+                st.markdown(f"**Correct answer:** {q['options'][q['correct']]}")
+                st.markdown(f"**Explanation:** {q.get('explanation', 'N/A')}")
 
-                for i, related_topic in enumerate(st.session_state.related_topics, 1):
-                    col1, col2 = st.columns([4, 1])
-                    with col1:
-                        st.markdown(f"**{i}.** {related_topic}")
-                    with col2:
-                        if st.button("Learn", key=f"related_{i}"):
-                            # Reset and start learning this topic
-                            for key in list(st.session_state.keys()):
-                                del st.session_state[key]
-                            st.session_state.current_step = "fetch_content"
-                            st.session_state.topic = related_topic
-                            st.rerun()
+        if results["mastery"]:
+            self._render_mastery_section()
+        else:
+            self._render_retry_section(results)
 
-                st.markdown("---")
-                if st.button("Learn Another Topic", use_container_width=True):
-                    for key in list(st.session_state.keys()):
-                        del st.session_state[key]
+    def _render_mastery_section(self):
+        """Render mastery achievement section"""
+        st.success("🎉 Congratulations! You've mastered this topic!")
+        st.balloons()
+
+        st.markdown("---")
+        st.subheader("Continue Your Learning Journey")
+        st.markdown("Here are some related topics you might want to explore next:")
+
+        for i, related_topic in enumerate(st.session_state.related_topics, 1):
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.markdown(f"**{i}.** {related_topic}")
+            with col2:
+                if st.button("Learn", key=f"related_{i}"):
+                    self.reset_state()
+                    st.session_state.current_step = AppState.FETCH_CONTENT.value
+                    st.session_state.topic = related_topic
                     st.rerun()
-            else:
-                st.warning("📚 You need more practice. Let's focus on your weak areas!")
-                st.session_state.weak_areas = results["weak_areas"][:3]
-                st.session_state.quiz_attempt += 1
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button(
-                        "🔄 Retake Quiz (Focused on Weak Areas)",
-                        type="primary",
-                        use_container_width=True,
-                    ):
-                        st.session_state.current_step = "generate_quiz"
-                        st.rerun()
-                with col2:
-                    if st.button("📚 Study Again", use_container_width=True):
-                        st.session_state.current_step = "learning"
-                        st.rerun()
+        st.markdown("---")
+        if st.button("Learn Another Topic", use_container_width=True):
+            self.reset_state()
+            st.rerun()
+
+    def _render_retry_section(self, results: Dict):
+        """Render retry options for non-mastery"""
+        st.warning("📚 You need more practice. Let's focus on your weak areas!")
+        st.session_state.weak_areas = results["weak_areas"][:3]
+        st.session_state.quiz_attempt += 1
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button(
+                "🔄 Retake Quiz (Focused on Weak Areas)",
+                type="primary",
+                use_container_width=True,
+            ):
+                self.transition_to(AppState.GENERATE_QUIZ)
+        with col2:
+            if st.button("📚 Study Again", use_container_width=True):
+                self.transition_to(AppState.LEARNING)
+
+
+# MAIN APPLICATION
+def main():
+    """Main application entry point"""
+    st.set_page_config(
+        page_title="AI Learning Assistant",
+        page_icon="🎓",
+        layout="wide"
+    )
+
+    st.title("🎓 Multi Agent Learning Assistant")
+
+    # API Key validation
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        api_key = st.sidebar.text_input("Enter Gemini API Key", type="password")
+        if not api_key:
+            st.warning("Please enter your Gemini API key in the sidebar to continue")
+            st.info("Get API key from: https://aistudio.google.com/app/apikey")
+            return
+
+    # Initialize agents and state machine
+    agents = AgentManager(api_key)
+    state_machine = LearningStateMachine(agents)
+
+    # Run state machine
+    state_machine.run()
 
 
 if __name__ == "__main__":
     main()
+
