@@ -10,6 +10,7 @@
 === Members
 - 9914 Vivian Ludrick
 - 9899 Cyrus Gomes
+- Github Repository - https://github.com/vivalchemy/agentic-learner
 
 == Abstract
 This system implements a multi-agent architecture for personalized
@@ -170,6 +171,16 @@ concepts 5. Attempt counter increments for progress tracking
 Related Topics Agent activated only after mastery - Balloon animation
 and congratulatory messaging
 
+== Conclusion
+This multi-agent architecture demonstrates effective task decomposition
+in educational systems. By assigning specialized roles to distinct
+agents, the system achieves adaptive, personalized learning experiences
+that respond to individual performance. The evaluator-driven feedback
+loop and weak-area focusing mechanism enable iterative improvement until
+mastery. The modular design allows easy extension with additional agents
+for enhanced functionality, making it a scalable framework for
+AI-powered education.
+
 == Screenshots
 #image("./assets/01Oct25_21h54m02s.png", width: 35em)
 #image("./assets/01Oct25_21h55m47s.png", width: 35em)
@@ -186,18 +197,3 @@ and congratulatory messaging
 #image("./assets/01Oct25_22h01m00s.png", width: 35em)
 #image("./assets/01Oct25_22h01m05s.png", width: 35em)
 
-== Conclusion
-This multi-agent architecture demonstrates effective task decomposition
-in educational systems. By assigning specialized roles to distinct
-agents, the system achieves adaptive, personalized learning experiences
-that respond to individual performance. The evaluator-driven feedback
-loop and weak-area focusing mechanism enable iterative improvement until
-mastery. The modular design allows easy extension with additional agents
-for enhanced functionality, making it a scalable framework for
-AI-powered education.
-
-
-== Links
-
-- Github Repository - https://github.com/vivalchemy/ir-agentic
-- Deployed Instance - 

@@ -10,3 +10,4 @@ wheels/
 .venv
 PROMPT.md
 .env
+REPORT.pdf
