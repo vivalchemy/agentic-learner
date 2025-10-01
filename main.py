@@ -14,7 +14,6 @@ load_dotenv()
 
 # constants
 class Model(Enum):
-    """Enum for different models"""
     FAST = "gemini-2.5-flash"
     PRO = "gemini-2.5-pro"
 
@@ -22,7 +21,6 @@ MAX_WIDTH = 720
 
 # config & enums
 class AppState(Enum):
-    """Enum for different application states"""
     TOPIC_INPUT = "topic_input"
     FETCH_CONTENT = "fetch_content"
     LEARNING = "learning"
@@ -33,7 +31,6 @@ class AppState(Enum):
 
 @dataclass
 class SessionData:
-    """Data structure for session state"""
     current_step: str = AppState.TOPIC_INPUT.value
     topic: str = ""
     videos: Optional[List[Dict]] = None
@@ -64,8 +61,7 @@ class SessionData:
 
 # agents
 class TopicSelectorAgent:
-    """Agent for analyzing and refining learning topics"""
-    
+
     def __init__(self, api_key: str):
         self.agent = Agent(
             name="Topic Selector",
@@ -89,11 +85,9 @@ class TopicSelectorAgent:
 
 
 class VideoRetrieverAgent:
-    """Agent for fetching educational videos from YouTube"""
-    
+
     @staticmethod
     def fetch_videos(topic: str, limit: int = 10) -> List[Dict]:
-        """Fetch top videos and cache them"""
         try:
             videos = []
             video_results = scrapetube.get_search(topic, limit=limit)
@@ -113,21 +107,11 @@ class VideoRetrieverAgent:
                 if "ownerText" in video and "runs" in video["ownerText"]:
                     channel_name = video["ownerText"]["runs"][0].get("text", "Unknown")
 
-                views = "N/A"
-                if "viewCountText" in video and "simpleText" in video["viewCountText"]:
-                    views = video["viewCountText"]["simpleText"]
-
-                duration = "N/A"
-                if "lengthText" in video and "simpleText" in video["lengthText"]:
-                    duration = video["lengthText"]["simpleText"]
-
                 videos.append({
                     "title": title,
                     "link": f"https://www.youtube.com/watch?v={video_id}",
                     "video_id": video_id,
                     "channel": channel_name,
-                    "duration": duration,
-                    "views": views,
                 })
 
                 if len(videos) >= limit:
@@ -145,7 +129,7 @@ class DocGeneratorAgent:
     def __init__(self, api_key: str):
         self.agent = Agent(
             name="Documentation Generator",
-            model=Gemini(id=Model.PRO.value, api_key=api_key),
+            model=Gemini(id=Model.FAST.value, api_key=api_key),
             role="Educational Content Creator",
             instructions=[
                 "Research and compile comprehensive educational documentation",
@@ -367,9 +351,7 @@ class AgentManager:
         self.related_agent = RelatedTopicsAgent(api_key)
 
 
-# ============================================================================
-# STATE MACHINE
-# ============================================================================
+# state machine
 
 class LearningStateMachine:
     """State machine to manage application flow and transitions"""
@@ -414,9 +396,7 @@ class LearningStateMachine:
         else:
             st.error(f"Unknown state: {current_state}")
 
-    # ========================================================================
-    # STATE HANDLERS
-    # ========================================================================
+# state handlers
 
     def handle_topic_input(self):
         """Handle topic input state"""
@@ -676,7 +656,7 @@ def main():
         layout="wide"
     )
 
-    st.title("🎓 Multi Agent Learning Assistant")
+    st.title("🎓 Agentic Learner")
 
     # API Key validation
     api_key = os.getenv("GEMINI_API_KEY")
