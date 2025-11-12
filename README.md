@@ -70,6 +70,23 @@ The system implements a sophisticated feedback loop:
 - **Content Retrieval**: Scrapetube (YouTube video scraping)
 - **Async Processing**: Python asyncio for concurrent operations
 
+## Screenshots
+
+![](./assets/01Oct25_21h54m02s.png)
+![](./assets/01Oct25_21h55m47s.png)
+![](./assets/01Oct25_21h55m50s.png)
+![](./assets/01Oct25_21h55m53s.png)
+![](./assets/01Oct25_21h56m39s.png)
+![](./assets/01Oct25_21h57m59s.png)
+![](./assets/01Oct25_21h58m47s.png)
+![](./assets/01Oct25_21h59m11s.png)
+![](./assets/01Oct25_21h59m16s.png)
+![](./assets/01Oct25_21h59m18s.png)
+![](./assets/01Oct25_21h59m34s.png)
+![](./assets/01Oct25_22h00m55s.png)
+![](./assets/01Oct25_22h01m00s.png)
+![](./assets/01Oct25_22h01m05s.png)
+
 ## 🚀 Getting Started
 
 ### Prerequisites
